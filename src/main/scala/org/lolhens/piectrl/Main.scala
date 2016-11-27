@@ -16,11 +16,12 @@ object Main {
 
     val server = new Server(11641)
 
-    server.messages
+    server.output
       .flatMap(message => Observable.fromFuture(gpioControl.state = message))
       .map(server.broadcast)
       .subscribe()
-    //.foreach(println(_))
+
+    server.clientBuffer.foreach(_.input += gpioControl.state)
 
     while (true) {
       Thread.sleep(1000)

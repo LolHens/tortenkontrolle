@@ -1,54 +1,90 @@
 package org.lolhens.piectrl
 
 import java.net.{ServerSocket, Socket}
-import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
+import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
 
-import scala.ref.WeakReference
+import scala.concurrent.Future
+import scala.util.control.NonFatal
 
 /**
   * Created by pierr on 04.11.2016.
   */
 class Server(val port: Int) {
   private val serverSocket = new ServerSocket(port)
-  private val lock = new ReentrantLock()
-  @volatile private var clients: List[WeakReference[Socket]] = Nil
 
-  private def addClient(client: Socket) = {
-    lock.lock()
-    clients = (clients :+ WeakReference(client)).filter(_.get.isDefined)
-    lock.unlock()
+  private val clientsLock = new ReentrantReadWriteLock()
+  @volatile private var _clients = List[Client]()
+
+  def clients = {
+    clientsLock.readLock().lock()
+    val result = _clients
+    clientsLock.readLock().unlock()
+    result
   }
 
-  private def messageSocket = {
-    {
-      for (
-        socket <- Observable.repeatEval(serverSocket.accept());
-        _ = addClient(socket);
-        inputStream = socket.getInputStream;
-        message <- Observable.fromIterator(new Iterator[Int] {
-          var lastByte: Option[Int] = None
+  class Client(socket: Socket) {
+    val remoteAddress = socket.getRemoteSocketAddress
 
-          def read() = lastByte.getOrElse {
-            val byte = inputStream.read()
-            lastByte = Some(byte)
-            byte
-          }
+    clientsLock.writeLock().lock()
+    _clients = _clients :+ this
+    clientsLock.writeLock().unlock()
 
-          override def hasNext: Boolean = read() != -1
+    println(s"added client $remoteAddress")
 
-          override def next(): Int = {
-            val byte = read()
-            lastByte = None
-            byte
-          }
-        })
-      ) yield message
-    }.doOnError(_ => serverSocket.close())
+    val lock = new ReentrantReadWriteLock()
+
+    @volatile private var _closed = false
+
+    val output = Observable.repeatEval(Future(socket.getInputStream.read()))
+      .flatMap(Observable.fromFuture(_))
+      .takeWhile(_ != -1)
+      .map { e => println(s"receiving $e from $remoteAddress"); e }
+      .endWithError(new Exception("ended")).onErrorHandleWith { e =>
+      println(e.toString)
+      close
+      Observable()
+    }
+
+    val input = new BoundedEventBuffer[Int]()
+
+    Observable.fromIterable(input)
+      .map { e => println(s"sending $e to $remoteAddress"); e }
+      .foreach(socket.getOutputStream.write(_)).onFailure {
+      case NonFatal(e) =>
+        println(e.toString)
+        close
+    }
+
+    def closed = {
+      lock.readLock().lock()
+      val result = _closed
+      lock.readLock().unlock()
+      result
+    }
+
+    def close = {
+      lock.writeLock().lock()
+      _closed = true
+      socket.close()
+      lock.writeLock().unlock()
+      clientsLock.writeLock().lock()
+      _clients = _clients.filterNot(_ == this)
+      println(s"remove client $remoteAddress")
+      clientsLock.writeLock().unlock()
+    }
   }
 
-  def broadcast(message: Int): Unit =
+  val clientBuffer = new BoundedEventBuffer[Client](1)
 
-  def messages: Observable[Int] = messageSocket.onErrorRestartUnlimited
+  val output =
+    Observable.repeatEval(Future(serverSocket.accept()))
+      .flatMap(Observable.fromFuture(_))
+      .map(socket => new Client(socket))
+      .map { client => clientBuffer += client; client }
+      .mergeMap(e => e.output)
+
+  def broadcast(message: Int): Unit = clients.foreach(_.input += message)
 }
