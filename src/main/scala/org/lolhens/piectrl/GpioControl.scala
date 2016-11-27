@@ -1,6 +1,8 @@
 package org.lolhens.piectrl
 
 
+import java.util.concurrent.locks.ReentrantReadWriteLock
+
 import com.pi4j.io.gpio.{GpioFactory, PinState, RaspiPin}
 import com.pi4j.system.SystemInfo.BoardType
 import monix.execution.Scheduler.Implicits.global
@@ -17,24 +19,37 @@ class GpioControl(val pinOffset: Int = 0,
     gpio.provisionDigitalOutputPin(RaspiPin.allPins(null: BoardType).apply(i), PinState.HIGH)
   }
 
-  private var _state = 0
+  private val lock = new ReentrantReadWriteLock()
 
-  def state: Int = _state
+  @volatile private var _state = 0
+
+  def state: Int = {
+    lock.readLock().lock()
+    val result = _state
+    lock.readLock().unlock()
+    result
+  }
 
   def state_=(state: Int): Future[Int] = {
+    println("a")
+    lock.writeLock().lock()
     _state = state
+    lock.writeLock().unlock()
+    println("b")
 
     val active = pins.zipWithIndex.filter {
       case (pin, i) => (state & (1 << i)) != 0
     }.map(_._1)
 
     Future {
+      println("c")
       pins.foreach { pin =>
         if (active.contains(pin))
           pin.setState(PinState.LOW)
         else
           pin.setState(PinState.HIGH)
       }
+      println("d")
 
       state
     }

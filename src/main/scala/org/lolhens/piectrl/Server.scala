@@ -1,90 +1,67 @@
 package org.lolhens.piectrl
 
-import java.net.{ServerSocket, Socket}
+import java.net.ServerSocket
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
+import akka.actor.ActorSystem
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
 
 import scala.concurrent.Future
-import scala.util.control.NonFatal
 
 /**
   * Created by pierr on 04.11.2016.
   */
-class Server(val port: Int) {
+class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSystem: ActorSystem) {
   private val serverSocket = new ServerSocket(port)
 
-  private val clientsLock = new ReentrantReadWriteLock()
-  @volatile private var _clients = List[Client]()
+  class ClientManager {
+    private val lock = new ReentrantReadWriteLock()
 
-  def clients = {
-    clientsLock.readLock().lock()
-    val result = _clients
-    clientsLock.readLock().unlock()
-    result
-  }
+    @volatile private var _clients: List[Client] = Nil
 
-  class Client(socket: Socket) {
-    val remoteAddress = socket.getRemoteSocketAddress
-
-    clientsLock.writeLock().lock()
-    _clients = _clients :+ this
-    clientsLock.writeLock().unlock()
-
-    println(s"added client $remoteAddress")
-
-    val lock = new ReentrantReadWriteLock()
-
-    @volatile private var _closed = false
-
-    val output = Observable.repeatEval(Future(socket.getInputStream.read()))
-      .flatMap(Observable.fromFuture(_))
-      .takeWhile(_ != -1)
-      .map { e => println(s"receiving $e from $remoteAddress"); e }
-      .endWithError(new Exception("ended")).onErrorHandleWith { e =>
-      println(e.toString)
-      close
-      Observable()
-    }
-
-    val input = new BoundedEventBuffer[Int]()
-
-    Observable.fromIterable(input)
-      .map { e => println(s"sending $e to $remoteAddress"); e }
-      .foreach(socket.getOutputStream.write(_)).onFailure {
-      case NonFatal(e) =>
-        println(e.toString)
-        close
-    }
-
-    def closed = {
+    def clients: List[Client] = {
       lock.readLock().lock()
-      val result = _closed
+      val result = _clients
       lock.readLock().unlock()
       result
     }
 
-    def close = {
+    def +=(client: Client): Unit = {
       lock.writeLock().lock()
-      _closed = true
-      socket.close()
+      _clients = _clients :+ client
       lock.writeLock().unlock()
-      clientsLock.writeLock().lock()
-      _clients = _clients.filterNot(_ == this)
-      println(s"remove client $remoteAddress")
-      clientsLock.writeLock().unlock()
+      println(s"added client ${client.remoteAddress}")
+    }
+
+    def -=(client: Client): Unit = {
+      lock.writeLock().lock()
+      _clients = _clients.filterNot(_ == client)
+      lock.writeLock().unlock()
+      println(s"removed client ${client.remoteAddress}")
     }
   }
 
-  val clientBuffer = new BoundedEventBuffer[Client](1)
+  val clientManager = new ClientManager()
 
-  val output =
-    Observable.repeatEval(Future(serverSocket.accept()))
-      .flatMap(Observable.fromFuture(_))
-      .map(socket => new Client(socket))
-      .map { client => clientBuffer += client; client }
-      .mergeMap(e => e.output)
+  private val outputBuffer = new BoundedEventBuffer[Int]()
 
-  def broadcast(message: Int): Unit = clients.foreach(_.input += message)
+  Observable.repeatEval(Future(serverSocket.accept()))
+    .flatMap(Observable.fromFuture(_))
+    .map { socket =>
+      val client = new Client(socket, clientManager -= _)
+      clientManager += client
+      client.send
+      onAccept(client)
+      client
+    }
+    .foreach(_.output.foreach(outputBuffer += _))
+
+  val output: Observable[Int] =
+    Observable.fromIterable(outputBuffer)
+      .map { e => println(s"server is receiving 0x${Integer.toHexString(e)}"); e }
+
+  def broadcast(message: Int): Unit = {
+    clientManager.clients.foreach(_.input += message)
+  }
 }
