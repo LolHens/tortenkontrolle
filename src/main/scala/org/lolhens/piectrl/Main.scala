@@ -13,7 +13,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     implicit val actorSystem = ActorSystem()
 
-    val gpioControl = new FakeGpioControl(
+    val gpioControl = new GpioControl(
       pinCount = 8
     )
 

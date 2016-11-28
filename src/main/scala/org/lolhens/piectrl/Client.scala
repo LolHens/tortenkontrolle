@@ -1,7 +1,7 @@
 package org.lolhens.piectrl
 
 import java.net.{Socket, SocketAddress}
-import java.util.concurrent.locks.ReentrantReadWriteLock
+import java.util.concurrent.locks.{ReentrantLock, ReentrantReadWriteLock}
 
 import akka.actor.ActorSystem
 import monix.execution.Cancelable
@@ -18,27 +18,35 @@ class Client(socket: Socket, onClose: Client => Unit)(implicit actorSystem: Acto
 
   @volatile private var _closed = false
 
-  val output: Observable[Int] = Observable.repeatEval(Future(socket.getInputStream.read()))
-    .flatMap(Observable.fromFuture(_))
-    .takeWhile(_ != -1)
-    .map { e => println(s"receiving 0x${Integer.toHexString(e)} from $remoteAddress"); e }
-    .doOnError(e => println(s"error on client $remoteAddress: $e"))
-    .onErrorHandleWith { e =>
-      println(s"error not handled $remoteAddress")
-      Observable()
-    }
-    .doOnComplete(close)
+  val output: Observable[Int] =
+    Observable.fromInputStream(socket.getInputStream, 1)
+      .map(_.head & 0xFF)
+      .takeWhile(_ != -1)
+      .map { e => println(s"receiving 0x${Integer.toHexString(e)} from $remoteAddress"); e }
+      .doOnError(e => println(s"error on client $remoteAddress: $e"))
+      .onErrorHandleWith { e =>
+        println(s"error not handled $remoteAddress")
+        Observable()
+      }
+      .doOnComplete(close)
 
   val input = new BoundedEventBuffer[Int]()
 
-  val senderActorRef = SenderActor.actor(socket.getOutputStream)
+  val lock = new ReentrantLock()
 
   lazy val send: Cancelable = {
-
-
     Observable.fromIterable(input)
       .map { e => println(s"sending 0x${Integer.toHexString(e)} to $remoteAddress"); e }
-      .map(msg => senderActorRef ! SenderActor.SendMessage(msg))
+      .flatMap { msg =>
+        Observable.fromFuture(Future {
+          lock.lock()
+          try {
+            socket.getOutputStream.write(msg)
+            socket.getOutputStream.flush()
+          } finally
+            lock.unlock()
+        })
+      }
       .doOnError(e => println(s"error on client $remoteAddress: $e"))
       .onErrorHandleWith { e =>
         println(s"error not handled $remoteAddress")
@@ -59,9 +67,11 @@ class Client(socket: Socket, onClose: Client => Unit)(implicit actorSystem: Acto
 
   def close = {
     closeLock.writeLock().lock()
-    _closed = true
-    socket.close()
-    onClose(this)
-    closeLock.writeLock().unlock()
+    try {
+      _closed = true
+      socket.close()
+      onClose(this)
+    } finally
+      closeLock.writeLock().unlock()
   }
 }
