@@ -7,7 +7,7 @@ import akka.actor.ActorSystem
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
 
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 
 /**
   * Created by pierr on 04.11.2016.
