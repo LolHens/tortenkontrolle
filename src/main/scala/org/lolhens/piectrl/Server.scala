@@ -31,14 +31,14 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSy
       lock.writeLock().lock()
       _clients = _clients :+ client
       lock.writeLock().unlock()
-      println(s"added client ${client.remoteAddress}")
+      println(s"added client $client")
     }
 
     def -=(client: Client): Unit = {
       lock.writeLock().lock()
       _clients = _clients.filterNot(_ == client)
       lock.writeLock().unlock()
-      println(s"removed client ${client.remoteAddress}")
+      println(s"removed client $client")
     }
   }
 
@@ -46,12 +46,21 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSy
 
   private val outputBuffer = new BoundedEventBuffer[Int]()
 
-  Observable.repeatEval(Future(serverSocket.accept()))
+  Observable.repeatEval(Future{
+    println("accepting")
+    val r = serverSocket.accept()
+    println("accepted")
+    r
+  })
     .flatMap(Observable.fromFuture(_))
     .map { socket =>
       val client = new Client(socket, clientManager -= _)
       clientManager += client
-      client.send
+      println("wtf")
+      Future(client.send).onComplete {
+        case _ => println("asdf")
+      }
+      println(s"sending on $client")
       onAccept(client)
       client
     }
@@ -62,6 +71,11 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSy
       .map { e => println(s"server is receiving 0x${Integer.toHexString(e)}"); e }
 
   def broadcast(message: Int): Unit = {
-    clientManager.clients.foreach(_.input += message)
+    println(s"broadcasting to clients: ${clientManager.clients.mkString}")
+    clientManager.clients.foreach{ client =>
+      while (! client.input.compareAndSet(None, Some(message))) {
+
+      }
+    }
   }
 }
