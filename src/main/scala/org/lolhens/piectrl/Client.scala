@@ -15,7 +15,7 @@ import scala.util.Try
 /**
   * Created by pierr on 27.11.2016.
   */
-class Client(socket: Socket, onClose: Client => Unit)(implicit actorSystem: ActorSystem) {
+class Client(socket: Socket, onClose: Client => Unit) {
   private val remoteAddress: SocketAddress = socket.getRemoteSocketAddress
 
   @volatile private var _closed = false
@@ -32,15 +32,13 @@ class Client(socket: Socket, onClose: Client => Unit)(implicit actorSystem: Acto
       }
       .doOnComplete(close)
 
-  val input = Atomic(None: Option[Int])
+  val input = new BoundedQueue[Int](10)
 
   val lock = new ReentrantLock()
 
   lazy val send: Cancelable = {
-    Observable.repeatEval(
-      input.getAndSet(None)
-    )
-      .flatMap(_.map(Observable(_)).getOrElse(Observable()))
+    println("1")
+    val r = input.observable
       .map { e => println(s"sending 0x${Integer.toHexString(e)} to $this"); e }
       .flatMap { msg =>
         Observable.fromFuture(Future {
@@ -62,6 +60,8 @@ class Client(socket: Socket, onClose: Client => Unit)(implicit actorSystem: Acto
       }
       .doOnComplete(close)
       .foreach(_ => ())
+    println("2")
+    r
   }
 
   val closeLock = new ReentrantReadWriteLock()

@@ -7,12 +7,13 @@ import akka.actor.ActorSystem
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
 
+import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 /**
   * Created by pierr on 04.11.2016.
   */
-class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSystem: ActorSystem) {
+class Server(val port: Int, onAccept: Client => Unit = _ => ()) {
   private val serverSocket = new ServerSocket(port)
 
   class ClientManager {
@@ -44,7 +45,7 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSy
 
   val clientManager = new ClientManager()
 
-  private val outputBuffer = new BoundedEventBuffer[Int]()
+  private val outputBuffer = new BoundedQueue[Int](20)
 
   Observable.repeatEval(Future{
     println("accepting")
@@ -64,18 +65,17 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit actorSy
       onAccept(client)
       client
     }
-    .foreach(_.output.foreach(outputBuffer += _))
+    .foreach(_.output.flatMap(message => {
+      println("a")
+      Observable.fromFuture(outputBuffer += message)
+    }).subscribe())
 
   val output: Observable[Int] =
-    Observable.fromIterable(outputBuffer)
+    outputBuffer.observable
       .map { e => println(s"server is receiving 0x${Integer.toHexString(e)}"); e }
 
   def broadcast(message: Int): Unit = {
     println(s"broadcasting to clients: ${clientManager.clients.mkString}")
-    clientManager.clients.foreach{ client =>
-      while (! client.input.compareAndSet(None, Some(message))) {
-
-      }
-    }
+    clientManager.clients.foreach(client => Await.result(client.input += message, Duration.Inf))
   }
 }
