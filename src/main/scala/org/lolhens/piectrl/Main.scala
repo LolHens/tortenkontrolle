@@ -1,11 +1,8 @@
 package org.lolhens.piectrl
 
-import akka.actor.ActorSystem
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration.Duration
 import scala.language.postfixOps
 
 /**
@@ -13,7 +10,7 @@ import scala.language.postfixOps
   */
 object Main {
   def main(args: Array[String]): Unit = {
-    val gpioControl = new FakeGpioControl(
+    val gpioControl = new GpioControl(
       pinCount = 8
     )
 

@@ -3,12 +3,12 @@ package org.lolhens.piectrl
 import java.net.{Socket, SocketAddress}
 import java.util.concurrent.locks.{ReentrantLock, ReentrantReadWriteLock}
 
-import akka.actor.ActorSystem
 import monix.execution.Cancelable
 import monix.execution.FutureUtils.extensions._
 import monix.execution.Scheduler.Implicits.global
-import monix.reactive.Observable
 import monix.execution.atomic._
+import monix.reactive.Observable
+
 import scala.concurrent.Future
 import scala.util.Try
 
@@ -37,19 +37,16 @@ class Client(socket: Socket, onClose: Client => Unit) {
   val lock = new ReentrantLock()
 
   lazy val send: Cancelable = {
-    println("1")
-    val r = input.observable
+    input.observable
       .map { e => println(s"sending 0x${Integer.toHexString(e)} to $this"); e }
       .flatMap { msg =>
         Observable.fromFuture(Future {
-          println("lock")
           lock.lock()
           val r = Try {
             socket.getOutputStream.write(msg)
             socket.getOutputStream.flush()
           }
           lock.unlock()
-          println("unlock")
           r
         }.dematerialize)
       }
@@ -60,8 +57,6 @@ class Client(socket: Socket, onClose: Client => Unit) {
       }
       .doOnComplete(close)
       .foreach(_ => ())
-    println("2")
-    r
   }
 
   val closeLock = new ReentrantReadWriteLock()

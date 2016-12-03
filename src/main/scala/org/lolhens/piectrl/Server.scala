@@ -3,7 +3,6 @@ package org.lolhens.piectrl
 import java.net.ServerSocket
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
-import akka.actor.ActorSystem
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
 
@@ -47,26 +46,16 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ()) {
 
   private val outputBuffer = new BoundedQueue[Int](20)
 
-  Observable.repeatEval(Future{
-    println("accepting")
-    val r = serverSocket.accept()
-    println("accepted")
-    r
-  })
+  Observable.repeatEval(Future(serverSocket.accept()))
     .flatMap(Observable.fromFuture(_))
     .map { socket =>
       val client = new Client(socket, clientManager -= _)
       clientManager += client
-      println("wtf")
-      Future(client.send).onComplete {
-        case _ => println("asdf")
-      }
-      println(s"sending on $client")
+      Future(client.send)
       onAccept(client)
       client
     }
     .foreach(_.output.flatMap(message => {
-      println("a")
       Observable.fromFuture(outputBuffer += message)
     }).subscribe())
 

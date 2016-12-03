@@ -5,6 +5,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import monix.reactive.Observable
 
 import scala.annotation.tailrec
+import scala.concurrent.duration.Duration
 import scala.concurrent.{Future, _}
 import scala.util.Try
 
@@ -37,6 +38,7 @@ class BoundedQueue[E](val capacity: Option[Long] = None) {
 
   def isFull: Boolean = {
     def queueSize = size
+
     capacity.exists(capacity => queueSize >= capacity)
   }
 
@@ -79,7 +81,6 @@ class BoundedQueue[E](val capacity: Option[Long] = None) {
       blocking(Try(notFullEvent.synchronized(notFullEvent.wait(100))))
       tryPush
     }
-    println(s"size : $size")
 
     tryPush
   }
@@ -87,21 +88,17 @@ class BoundedQueue[E](val capacity: Option[Long] = None) {
   def +=(elem: E)(implicit executionContext: ExecutionContext): Future[Unit] = pushBlocking(elem)
 
   def popBlocking(implicit executionContext: ExecutionContext): Future[E] = Future {
-    println("pop1")
-
     @tailrec
     def tryPop: E = pop match {
       case Some(elem) =>
-        println("popped")
         elem
       case None =>
         blocking(Try(notEmptyEvent.synchronized(notEmptyEvent.wait(100))))
         tryPop
     }
 
-    println("pop")
     tryPop
   }
 
-  def observable(implicit executionContext: ExecutionContext): Observable[E] = Observable.repeatEval(popBlocking).flatMap(Observable.fromFuture(_))
+  def observable(implicit executionContext: ExecutionContext): Observable[E] = Observable.repeatEval(Await.result(popBlocking, Duration.Inf))
 }
