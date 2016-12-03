@@ -31,25 +31,21 @@ class GpioControl(val pinOffset: Int = 0,
   }
 
   def state_=(state: Int): Future[Int] = {
-    println("a")
     lock.writeLock().lock()
     _state = state
     lock.writeLock().unlock()
-    println("b")
 
     val active = pins.zipWithIndex.filter {
       case (pin, i) => (state & (1 << i)) != 0
     }.map(_._1)
 
     Future {
-      println("c")
       pins.foreach { pin =>
         if (active.contains(pin))
           pin.setState(PinState.LOW)
         else
           pin.setState(PinState.HIGH)
       }
-      println("d")
 
       state
     }
