@@ -55,9 +55,9 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ()) {
       onAccept(client)
       client
     }
-    .foreach(_.output.flatMap(message => {
+    .mergeMap(_.output.flatMap(message => {
       Observable.fromFuture(outputBuffer += message)
-    }).subscribe())
+    })).subscribe()
 
   val output: Observable[Int] =
     outputBuffer.observable

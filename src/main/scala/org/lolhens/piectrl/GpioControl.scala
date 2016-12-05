@@ -40,12 +40,15 @@ class GpioControl(val pinOffset: Int = 0,
     }.map(_._1)
 
     Future {
+      println("a")
       pins.foreach { pin =>
         if (active.contains(pin))
           pin.setState(PinState.LOW)
         else
           pin.setState(PinState.HIGH)
       }
+
+      println("b")
 
       state
     }
