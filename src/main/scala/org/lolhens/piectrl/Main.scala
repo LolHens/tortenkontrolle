@@ -10,7 +10,7 @@ import scala.language.postfixOps
   */
 object Main {
   def main(args: Array[String]): Unit = {
-    val gpioControl = new GpioControl(
+    val gpioControl = new FakeGpioControl(
       pinCount = 8
     )
 

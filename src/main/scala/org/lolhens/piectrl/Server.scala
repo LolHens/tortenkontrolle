@@ -3,7 +3,7 @@ package org.lolhens.piectrl
 import java.net.ServerSocket
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
-import monix.execution.Scheduler.Implicits.global
+import monix.execution.Scheduler
 import monix.reactive.Observable
 
 import scala.concurrent.duration.Duration
@@ -14,6 +14,7 @@ import scala.concurrent.{Await, Future}
   */
 class Server(val port: Int, onAccept: Client => Unit = _ => ()) {
   private val serverSocket = new ServerSocket(port)
+  private implicit val scheduler = Scheduler.io()
 
   class ClientManager {
     private val lock = new ReentrantReadWriteLock()

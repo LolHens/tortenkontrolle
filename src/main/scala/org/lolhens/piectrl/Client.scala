@@ -3,9 +3,8 @@ package org.lolhens.piectrl
 import java.net.{Socket, SocketAddress}
 import java.util.concurrent.locks.{ReentrantLock, ReentrantReadWriteLock}
 
-import monix.execution.Scheduler.Implicits.global
 import monix.execution.atomic._
-import monix.execution.{Ack, Cancelable}
+import monix.execution.{Ack, Cancelable, Scheduler}
 import monix.reactive.{Notification, Observable, Observer}
 
 import scala.concurrent.{Future, blocking}
@@ -17,6 +16,7 @@ import scala.util.control.NonFatal
   */
 class Client(socket: Socket, onClose: Client => Unit) {
   private val remoteAddress: SocketAddress = socket.getRemoteSocketAddress
+  private implicit val scheduler = Scheduler.io()
 
   @volatile private var _closed = false
 
