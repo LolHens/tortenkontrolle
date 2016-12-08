@@ -2,6 +2,8 @@ package org.lolhens.piectrl
 
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Observable
+import swave.core.io.files._
+import swave.core._
 
 import scala.language.postfixOps
 

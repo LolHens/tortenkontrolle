@@ -27,6 +27,8 @@ lazy val settings = Seq(
     "com.typesafe.akka" %% "akka-http-experimental" % "2.4.11",
     "io.spray" %% "spray-json" % "1.3.2",
     "com.github.fommil" %% "spray-json-shapeless" % "1.3.0",
+    "io.swave" % "swave-core_2.11" % "0.5.0",
+    "io.swave" % "swave-scodec-compat_2.11" % "0.5.0",
     "com.pi4j" % "pi4j-core" % "1.1"
   ),
 
