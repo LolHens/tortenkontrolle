@@ -1,16 +1,14 @@
+import sbt.Keys.scalaVersion
+
 name := "Tortenkontrolle"
 
-version := "0.0.5"
-
-scalaVersion := "2.11.8"
-
-resolvers := Seq("Artifactory" at "http://lolhens.no-ip.org/artifactory/libs-release/")
-
-dependencyUpdatesExclusions := moduleFilter(organization = "org.scala-lang")
-
-scalacOptions ++= Seq("-Xmax-classfile-name", "254")
-
 lazy val settings = Seq(
+  version := "0.0.5",
+
+  scalaVersion := "2.11.8",
+
+  resolvers := Seq("Artifactory" at "http://lolhens.no-ip.org/artifactory/libs-release/"),
+
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-reflect" % "2.11.8",
     "org.slf4j" % "slf4j-api" % "1.7.21",
@@ -35,7 +33,11 @@ lazy val settings = Seq(
   addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
 
-  mainClass in Compile := Some("org.lolhens.piectrl.Main")
+  mainClass in Compile := Some("org.lolhens.piectrl.Main"),
+
+  dependencyUpdatesExclusions := moduleFilter(organization = "org.scala-lang"),
+
+  scalacOptions ++= Seq("-Xmax-classfile-name", "254")
 )
 
 lazy val root = project.in(file("."))
