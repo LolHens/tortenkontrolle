@@ -5,9 +5,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import monix.execution.Scheduler
 import monix.reactive.Observable
+import swave.core.{Drain, Spout}
 
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{Await, Future, blocking}
+import scala.util.Try
 
 /**
   * Created by pierr on 04.11.2016.
@@ -47,8 +49,11 @@ class Server(val port: Int, onAccept: Client => Unit = _ => ()) {
 
   private val outputBuffer = new BoundedQueue[Int](20)
 
-  Observable.repeatEval(Future(serverSocket.accept()))
-    .flatMap(Observable.fromFuture(_))
+  val acceptor = Spout.continually(Try(blocking(serverSocket.accept()))).async("blocking-io")
+    .flattenConcat()
+    .drainTo(Drain.toPublisher()).get
+
+  Observable.fromReactivePublisher(acceptor)
     .map { socket =>
       val client = new Client(socket, clientManager -= _)
       clientManager += client
