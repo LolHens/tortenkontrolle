@@ -12,6 +12,8 @@ import scala.language.postfixOps
   */
 object Main {
   def main(args: Array[String]): Unit = {
+    implicit val streamEnv = StreamEnv()
+
     val gpioControl = new FakeGpioControl(
       pinCount = 8
     )

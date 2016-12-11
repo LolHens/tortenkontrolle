@@ -6,6 +6,7 @@ import java.util.concurrent.locks.{ReentrantLock, ReentrantReadWriteLock}
 import monix.execution.atomic._
 import monix.execution.{Ack, Cancelable, Scheduler}
 import monix.reactive.{Notification, Observable, Observer}
+import swave.core.{Drain, Spout, StreamEnv}
 
 import scala.concurrent.{Future, blocking}
 import scala.util.Try
@@ -14,16 +15,18 @@ import scala.util.control.NonFatal
 /**
   * Created by pierr on 27.11.2016.
   */
-class Client(socket: Socket, onClose: Client => Unit) {
+class Client(socket: Socket, onClose: Client => Unit)(implicit streamEnv: StreamEnv) {
   private val remoteAddress: SocketAddress = socket.getRemoteSocketAddress
   private implicit val scheduler = Scheduler.io()
 
   @volatile private var _closed = false
 
   val output: Observable[Int] =
-    Observable.fromInputStream(socket.getInputStream, 1)
-      .map(_.head & 0xFF)
-      .takeWhile(_ != -1)
+    Observable.fromReactivePublisher(
+      Spout.continually(Try(blocking(socket.getInputStream.read()))).takeWhile(_.toOption.exists(_ != -1)).async("blocking-io")
+        .flattenConcat()
+        .drainTo(Drain.toPublisher()).get
+    )
       .materialize
       .map {
         case Notification.OnError(NonFatal(e)) =>

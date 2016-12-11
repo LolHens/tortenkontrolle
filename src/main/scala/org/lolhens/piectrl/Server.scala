@@ -5,7 +5,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import monix.execution.Scheduler
 import monix.reactive.Observable
-import swave.core.{Drain, Spout}
+import swave.core.{Drain, Spout, StreamEnv}
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future, blocking}
@@ -14,7 +14,7 @@ import scala.util.Try
 /**
   * Created by pierr on 04.11.2016.
   */
-class Server(val port: Int, onAccept: Client => Unit = _ => ()) {
+class Server(val port: Int, onAccept: Client => Unit = _ => ())(implicit val streamEnv: StreamEnv) {
   private val serverSocket = new ServerSocket(port)
   private implicit val scheduler = Scheduler.io()
 
