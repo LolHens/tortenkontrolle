@@ -1,9 +1,6 @@
 package org.lolhens.piectrl
 
-import monix.execution.Scheduler.Implicits.global
-import monix.reactive.Observable
-import swave.core.io.files._
-import swave.core._
+import akka.actor.ActorSystem
 
 import scala.language.postfixOps
 
@@ -12,21 +9,12 @@ import scala.language.postfixOps
   */
 object Main {
   def main(args: Array[String]): Unit = {
-    implicit val streamEnv = StreamEnv()
+    implicit val actorSystem = ActorSystem()
 
-    val gpioControl = new FakeGpioControl(
+    val gpioControl = new GpioControlImpl(
       pinCount = 8
     )
 
-    val server = new Server(11641, _.input += gpioControl.state)
-
-    server.output
-      .flatMap(message => Observable.fromFuture(gpioControl.state = message))
-      .map(server.broadcast)
-      .subscribe()
-
-    while (true) {
-      Thread.sleep(1000)
-    }
+    ServerActor.actor(gpioControl)
   }
 }
