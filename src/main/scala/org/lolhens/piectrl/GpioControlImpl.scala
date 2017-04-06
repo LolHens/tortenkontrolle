@@ -2,6 +2,7 @@ package org.lolhens.piectrl
 
 
 import com.pi4j.io.gpio.{GpioFactory, PinState, RaspiPin}
+import com.pi4j.system.SystemInfo
 import com.pi4j.system.SystemInfo.BoardType
 
 /**
@@ -11,7 +12,7 @@ class GpioControlImpl(pinOffset: Int = 0,
                       pinCount: Int) extends GpioControl(pinOffset, pinCount) {
   private val gpio = GpioFactory.getInstance()
   private val pins = (pinOffset until pinCount).map { i =>
-    gpio.provisionDigitalOutputPin(RaspiPin.allPins(null: BoardType).apply(i), PinState.HIGH)
+    gpio.provisionDigitalOutputPin(RaspiPin.allPins(SystemInfo.getBoardType).apply(i), PinState.HIGH)
   }
 
   private var _state = 0
