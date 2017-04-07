@@ -11,6 +11,8 @@ class GpioActor extends Actor {
   val gpioController: GpioController = GpioFactory.getInstance()
 
   override def receive: Receive = {
+
+
     case SetState(state) =>
       gpioController.provisionDigitalOutputPin()
   }
@@ -26,6 +28,10 @@ object GpioActor {
   trait Command
 
   trait Event
+
+  case object GetPins extends Command
+
+  case class Pins(pins: Set[Pin]) extends Event
 
   case class SetState(pins: Map[Pin, Option[Boolean]]) extends Command
 
