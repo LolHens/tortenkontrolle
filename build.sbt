@@ -1,5 +1,3 @@
-import sbt.Keys.scalaVersion
-
 name := "Tortenkontrolle"
 
 lazy val settings = Seq(

@@ -17,7 +17,7 @@ class GpioManager extends Actor {
 
       try {
         val gpioController: GpioController = GpioFactory.getInstance()
-        val pins = RaspiPin.allPins(SystemInfo.getBoardType).map(new Pin(_)).toSet
+        val pins: Set[Pin] = RaspiPin.allPins(SystemInfo.getBoardType).map(new Pin(_)).toSet
 
 
       } catch {
@@ -30,5 +30,5 @@ class GpioManager extends Actor {
 object GpioManager {
   private[gpio] val props = Props[GpioManager]
 
-  private[gpio] def actor(actorRefFactory: ActorRefFactory): ActorRef = actorRefFactory.actorOf(props)
+  private[gpio] def actor(implicit actorRefFactory: ActorRefFactory): ActorRef = actorRefFactory.actorOf(props)
 }

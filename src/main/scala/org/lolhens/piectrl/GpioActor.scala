@@ -14,7 +14,7 @@ class GpioActor extends Actor {
 
 
     case SetState(state) =>
-      gpioController.provisionDigitalOutputPin()
+      //gpioController.provisionDigitalOutputPin()
   }
 }
 

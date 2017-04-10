@@ -15,7 +15,7 @@ object Gpio extends ExtensionId[GpioExt] with ExtensionIdProvider {
 
   trait Event
 
-  class Pin private[gpio](pin: com.pi4j.io.gpio.Pin) {
+  class Pin private[gpio](private[gpio] val pin: com.pi4j.io.gpio.Pin) {
     def name: String = pin.getName
 
     def address: Int = pin.getAddress
@@ -26,6 +26,10 @@ object Gpio extends ExtensionId[GpioExt] with ExtensionIdProvider {
   case class CommandFailed(command: Command) extends Event
 
   case class Connected(pins: Set[Pin]) extends Event
+
+  case class SetState(pins: Map[Pin, Option[Boolean]])
+
+  case class StateChanged(pins: Map[Pin, Boolean])
 
 }
 
