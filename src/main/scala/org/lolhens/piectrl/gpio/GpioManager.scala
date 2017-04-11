@@ -1,9 +1,9 @@
 package org.lolhens.piectrl.gpio
 
 import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
-import com.pi4j.io.gpio.{GpioController, GpioFactory, RaspiPin}
+import com.pi4j.io.gpio.{GpioController, GpioFactory, Pin, RaspiPin}
 import com.pi4j.system.SystemInfo
-import org.lolhens.piectrl.gpio.Gpio.{CommandFailed, Connect, Pin}
+import org.lolhens.piectrl.gpio.Gpio._
 
 import scala.util.control.NonFatal
 
@@ -14,14 +14,25 @@ class GpioManager extends Actor {
   override def receive: Receive = {
     case connect@Connect =>
       val listener = sender()
-
       try {
         val gpioController: GpioController = GpioFactory.getInstance()
-        val pins: Set[Pin] = RaspiPin.allPins(SystemInfo.getBoardType).map(new Pin(_)).toSet
+        val pins: Set[Pin] = RaspiPin.allPins(SystemInfo.getBoardType).toSet
 
+        val connection: ActorRef = GpioConnection.actor(gpioController, pins)
+        connection ! Register(listener)
+        listener tell(Connected, connection)
 
+        context.become {
+          case Connect =>
+            val listener = sender()
+            connection ! Register(listener)
+            listener tell(Connected, connection)
+        }
       } catch {
-        case NonFatal(exception) =>
+        case NonFatal(_) =>
+          listener ! CommandFailed(connect)
+
+        case exception: UnsatisfiedLinkError =>
           listener ! CommandFailed(connect)
       }
   }

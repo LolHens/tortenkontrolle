@@ -1,9 +1,9 @@
 name := "Tortenkontrolle"
 
 lazy val settings = Seq(
-  version := "0.1.0",
+  version := "0.1.1",
 
-  scalaOrganization := "org.typelevel",
+  scalaOrganization in ThisBuild := "org.typelevel",
   scalaVersion := "2.12.1",
 
   resolvers := Seq("Artifactory" at "http://lolhens.no-ip.org/artifactory/libs-release/"),
@@ -41,7 +41,6 @@ lazy val settings = Seq(
 
   addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
   addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
-  //addCompilerPlugin("com.milessabin" % "si2712fix-plugin_2.11.8" % "1.2.0"),
 
   mainClass in Compile := Some("org.lolhens.piectrl.Main"),
 
