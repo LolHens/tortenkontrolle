@@ -14,19 +14,22 @@ class GpioManager extends Actor {
   override def receive: Receive = {
     case connect@Connect =>
       val listener = sender()
+
       try {
         val gpioController: GpioController = GpioFactory.getInstance()
         val pins: Set[Pin] = RaspiPin.allPins(SystemInfo.getBoardType).toSet
 
         val connection: ActorRef = GpioConnection.actor(gpioController, pins)
+
         connection ! Register(listener)
-        listener tell(Connected, connection)
+        listener tell(Connected(pins), connection)
 
         context.become {
           case Connect =>
             val listener = sender()
+
             connection ! Register(listener)
-            listener tell(Connected, connection)
+            listener tell(Connected(pins), connection)
         }
       } catch {
         case NonFatal(_) =>

@@ -13,34 +13,41 @@ class GpioConnection(gpioController: GpioController,
                      pins: Set[Pin]) extends Actor {
   var eventRouter = Router(BroadcastRoutingLogic())
 
-  case class ProvisionedPin(gpioPin: GpioPinDigitalOutput, state: Option[Boolean]) {
-    def setState(state: Option[Boolean]): ProvisionedPin =
-      if (state != this.state) {
-        state match {
-          case Some(state) =>
-            if (this.state.isEmpty)
-              gpioPin.setMode(PinMode.ANALOG_OUTPUT)
-            gpioPin.setState(state)
+  private val output = PinMode.DIGITAL_OUTPUT
+  private val input = PinMode.DIGITAL_INPUT
+
+  case class ProvisionedPin(pin: Pin, state: Option[Boolean]) {
+    val gpioPin: GpioPinDigitalOutput = state match {
+      case Some(high) =>
+        val gpioPin = gpioController.provisionDigitalMultipurposePin(pin, output, PinPullResistance.PULL_DOWN)
+        gpioPin.setState(high)
+        gpioPin
+
+      case None =>
+        gpioController.provisionDigitalMultipurposePin(pin, input, PinPullResistance.PULL_DOWN)
+    }
+
+    gpioPin.addListener(new GpioPinListenerDigital {
+      override def handleGpioPinDigitalStateChangeEvent(event: GpioPinDigitalStateChangeEvent): Unit =
+        self ! StateChanged(pin, event.getState.isHigh)
+    })
+
+    def setState(newState: Option[Boolean]): ProvisionedPin =
+      if (newState != state) {
+        newState match {
+          case Some(high) =>
+            if (state.isEmpty)
+              gpioPin.setMode(output)
+
+            gpioPin.setState(high)
+            self ! StateChanged(pin, high)
 
           case None =>
-            gpioPin.setMode(PinMode.ANALOG_INPUT)
+            gpioPin.setMode(input)
         }
 
-        copy(state = state)
+        copy(state = newState)
       } else this
-  }
-
-  object ProvisionedPin {
-    def apply(pin: Pin, state: Option[Boolean]): ProvisionedPin = {
-      val gpioPin = gpioController.provisionDigitalMultipurposePin(pin,
-        state.map(_ => PinMode.ANALOG_OUTPUT).getOrElse(PinMode.ANALOG_INPUT))
-      state.foreach(gpioPin.setState)
-      gpioPin.addListener(new GpioPinListenerDigital {
-        override def handleGpioPinDigitalStateChangeEvent(event: GpioPinDigitalStateChangeEvent): Unit =
-          self ! StateChanged(Map(pin -> event.getState.isHigh))
-      })
-      ProvisionedPin(gpioPin, state)
-    }
   }
 
   var provisionedPins: Map[Pin, ProvisionedPin] = Map.empty
@@ -57,21 +64,17 @@ class GpioConnection(gpioController: GpioController,
       eventRouter.route(stateChanged, self)
 
     case SetState(states) =>
-      val newStates = states
+      states
         .filter(e => pins.contains(e._1))
-        .groupBy(_._2)
-        .map(e => (e._1, e._2.keys.toSet))
-        .flatMap {
-          case (state, pins) =>
-            pins.foreach(pin => provisionedPins.getOrElse(pin, {
-              provisionedPins + (pin -> ProvisionedPin(pin, state))
-            }))
+        .foreach {
+          case (pin, state) =>
+            val provisionedPin = provisionedPins.get(pin) match {
+              case Some(provisionedPin) => provisionedPin.setState(state)
+              case None => ProvisionedPin(pin, state)
+            }
 
-            //sender() ! StateChanged(pins.map(_ -> state).toMap)
-            pins.map(pin => pin -> state)
+            provisionedPins + (pin -> provisionedPin)
         }
-
-      eventRouter.route(StateChanged(newStates.flatMap(e => e._2.map(e._1 -> _))), self)
   }
 }
 
