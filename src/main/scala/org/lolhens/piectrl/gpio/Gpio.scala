@@ -16,17 +16,13 @@ object Gpio extends ExtensionId[GpioExt] with ExtensionIdProvider {
 
   trait Event
 
-  case class Connect(gpioHeader: GpioHeader) extends Command
+  case class ConnectDigital(gpioHeader: GpioHeader) extends Command
 
   private[gpio] case class Register(ref: ActorRef) extends Command
 
   case class CommandFailed(command: Command, reason: Throwable) extends Event
 
   case class Connected(pins: Set[Int]) extends Event
-
-  object Connected {
-    def apply(pins: Set[Pin]): Connected = Connected(pins.map(pin => pin.getAddress))
-  }
 
   case class SetState(pins: Map[Int, Option[Boolean]]) extends Command
 

@@ -2,7 +2,7 @@ package org.lolhens.piectrl
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.io.IO
-import org.lolhens.piectrl.gpio.Gpio.{Connect, Connected, SetState, StateChanged}
+import org.lolhens.piectrl.gpio.Gpio.{ConnectDigital, Connected, SetState, StateChanged}
 import org.lolhens.piectrl.gpio.{Gpio, GpioHeader}
 
 import scala.language.postfixOps
@@ -24,7 +24,7 @@ object Main {
 
     class GpioTestActor extends Actor {
       println("connecting")
-      IO(Gpio) ! Connect(GpioHeader.Raspberry)
+      IO(Gpio) ! ConnectDigital(GpioHeader.Raspberry)
 
       override def receive: Receive = {
         case Connected(pins) =>

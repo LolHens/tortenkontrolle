@@ -13,7 +13,7 @@ import scala.util.{Failure, Success, Try}
 class GpioManager extends Actor {
   var gpioConnections: Map[GpioHeader, ActorRef] = Map.empty
 
-  lazy val gpioControllerMaybe: Try[GpioController] = try {
+  lazy val gpioControllerTry: Try[GpioController] = try {
     Success(GpioFactory.getInstance())
   } catch {
     case NonFatal(exception) => Failure(exception)
@@ -21,12 +21,12 @@ class GpioManager extends Actor {
   }
 
   override def receive: Receive = {
-    case connect@Connect(gpioHeader) =>
+    case connect@ConnectDigital(gpioHeader) =>
       val listener = sender()
 
       {
         for {
-          gpioController <- gpioControllerMaybe
+          gpioController <- gpioControllerTry
           pins <- gpioHeader.pins
           connection = gpioConnections.getOrElse(gpioHeader, {
             val connection: ActorRef = GpioConnection.actor(gpioController, pins)
@@ -44,6 +44,8 @@ class GpioManager extends Actor {
 
       }
   }
+
+  override def postStop(): Unit = gpioControllerTry.foreach(_.shutdown())
 }
 
 object GpioManager {
