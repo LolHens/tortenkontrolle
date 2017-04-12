@@ -10,21 +10,21 @@ import org.lolhens.piectrl.gpio.Gpio.{Register, SetState, StateChanged}
   * Created by pierr on 07.04.2017.
   */
 class GpioConnection(gpioController: GpioController,
-                     pins: Set[Pin]) extends Actor {
+                     pins: Map[Int, Pin]) extends Actor {
   var eventRouter = Router(BroadcastRoutingLogic())
 
   private val (input, output) = (PinMode.DIGITAL_INPUT, PinMode.DIGITAL_OUTPUT)
   private val pullDown = PinPullResistance.PULL_DOWN
 
-  case class ProvisionedPin(pin: Pin, state: Option[Boolean]) {
+  case class ProvisionedPin(pin: Int, state: Option[Boolean]) {
     val gpioPin: GpioPinDigitalOutput = state match {
       case Some(high) =>
-        val gpioPin = gpioController.provisionDigitalMultipurposePin(pin, output, pullDown)
+        val gpioPin = gpioController.provisionDigitalMultipurposePin(pins(pin), output, pullDown)
         gpioPin.setState(high)
         gpioPin
 
       case None =>
-        gpioController.provisionDigitalMultipurposePin(pin, input, pullDown)
+        gpioController.provisionDigitalMultipurposePin(pins(pin), input, pullDown)
     }
 
     self ! StateChanged(pin, state.getOrElse(gpioPin.isHigh))
@@ -52,9 +52,9 @@ class GpioConnection(gpioController: GpioController,
       } else this
   }
 
-  var provisionedPins: Map[Pin, ProvisionedPin] = Map.empty
+  var provisionedPins: Map[Int, ProvisionedPin] = Map.empty
 
-  var lastPinState: Map[Pin, Boolean] = Map.empty
+  var lastPinState: Map[Int, Boolean] = Map.empty
 
   override def receive: Receive = {
     case Register(ref) =>
@@ -76,22 +76,22 @@ class GpioConnection(gpioController: GpioController,
         .filter(e => pins.contains(e._1))
         .foreach {
           case (pin, state) =>
-            val provisionedPin = provisionedPins.get(pin) match {
-              case Some(provisionedPin) => provisionedPin.setState(state)
-              case None => ProvisionedPin(pin, state)
-            }
-
-            provisionedPins += (pin -> provisionedPin)
+            provisionedPins += (pin -> {
+              provisionedPins.get(pin) match {
+                case Some(provisionedPin) => provisionedPin.setState(state)
+                case None => ProvisionedPin(pin, state)
+              }
+            })
         }
   }
 }
 
 object GpioConnection {
   private[gpio] def props(gpioController: GpioController,
-                          pins: Set[Pin]) = Props(new GpioConnection(gpioController, pins))
+                          pins: Map[Int, Pin]) = Props(new GpioConnection(gpioController, pins))
 
   private[gpio] def actor(gpioController: GpioController,
-                          pins: Set[Pin])
+                          pins: Map[Int, Pin])
                          (implicit actorRefFactory: ActorRefFactory): ActorRef =
     actorRefFactory.actorOf(props(gpioController, pins))
 }

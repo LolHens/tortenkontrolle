@@ -9,7 +9,7 @@ import scala.util.Try
   * Created by pierr on 12.04.2017.
   */
 case class GpioHeader(name: String)(_pins: => Seq[Pin]) {
-  def pins: Try[Set[Pin]] = Try(_pins.toSet)
+  def pins: Try[Map[Int, Pin]] = Try(_pins.map(e => e.getAddress -> e).toMap)
 }
 
 object GpioHeader {

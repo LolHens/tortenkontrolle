@@ -2,8 +2,8 @@ package org.lolhens.piectrl
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.io.IO
-import org.lolhens.piectrl.gpio.{Gpio, GpioHeader}
 import org.lolhens.piectrl.gpio.Gpio.{Connect, Connected, SetState, StateChanged}
+import org.lolhens.piectrl.gpio.{Gpio, GpioHeader}
 
 import scala.language.postfixOps
 
@@ -11,7 +11,8 @@ import scala.language.postfixOps
   * Created by pierr on 04.11.2016.
   */
 object Main {
-  def main(args: Array[String]): Unit = {println("start")
+  def main(args: Array[String]): Unit = {
+    println("start")
     implicit val actorSystem = ActorSystem()
 
     println("setup")
@@ -31,8 +32,8 @@ object Main {
           val connection = sender()
 
           context become {
-            //case StateChanged(pins(0), state) =>
-
+            case StateChanged(1, state) =>
+              connection ! SetState(2, Some(state))
 
             case StateChanged(pin, state) =>
               println(pin + " = " + state)
@@ -40,7 +41,7 @@ object Main {
 
           //Thread.sleep(2000)
 
-          connection ! SetState(Map(pins(1) -> None, pins(2) -> Some(true), pins(3) -> Some(false), pins(4) -> None, pins(5) -> None))
+          connection ! SetState(Map(1 -> None, 2 -> Some(true), 3 -> Some(false), 4 -> None, 5 -> None))
       }
     }
 

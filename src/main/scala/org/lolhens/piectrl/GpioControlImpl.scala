@@ -3,7 +3,6 @@ package org.lolhens.piectrl
 
 import com.pi4j.io.gpio.{GpioFactory, PinState, RaspiPin}
 import com.pi4j.system.SystemInfo
-import com.pi4j.system.SystemInfo.BoardType
 
 /**
   * Created by pierr on 04.11.2016.

@@ -22,19 +22,19 @@ object Gpio extends ExtensionId[GpioExt] with ExtensionIdProvider {
 
   case class CommandFailed(command: Command, reason: Throwable) extends Event
 
-  case class Connected(pins: Map[Int, Pin]) extends Event
+  case class Connected(pins: Set[Int]) extends Event
 
   object Connected {
-    def apply(pins: Set[Pin]): Connected = Connected(pins.map(pin => pin.getAddress -> pin).toMap)
+    def apply(pins: Set[Pin]): Connected = Connected(pins.map(pin => pin.getAddress))
   }
 
-  case class SetState(pins: Map[Pin, Option[Boolean]]) extends Command
+  case class SetState(pins: Map[Int, Option[Boolean]]) extends Command
 
   object SetState {
-    def apply(pin: Pin, state: Option[Boolean]): SetState = SetState(Map(pin -> state))
+    def apply(pin: Int, state: Option[Boolean]): SetState = SetState(Map(pin -> state))
   }
 
-  case class StateChanged(pin: Pin, state: Boolean) extends Event
+  case class StateChanged(pin: Int, state: Boolean) extends Event
 
 }
 
