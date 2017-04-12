@@ -2,7 +2,7 @@ package org.lolhens.piectrl
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.io.IO
-import org.lolhens.piectrl.gpio.Gpio
+import org.lolhens.piectrl.gpio.{Gpio, GpioHeader}
 import org.lolhens.piectrl.gpio.Gpio.{Connect, Connected, SetState, StateChanged}
 
 import scala.language.postfixOps
@@ -23,7 +23,7 @@ object Main {
 
     class GpioTestActor extends Actor {
       println("connecting")
-      IO(Gpio) ! Connect
+      IO(Gpio) ! Connect(GpioHeader.Raspberry)
 
       override def receive: Receive = {
         case Connected(pins) =>
@@ -31,8 +31,11 @@ object Main {
           val connection = sender()
 
           context become {
-            case StateChanged(state) =>
-              println(state)
+            //case StateChanged(pins(0), state) =>
+
+
+            case StateChanged(pin, state) =>
+              println(pin + " = " + state)
           }
 
           //Thread.sleep(2000)

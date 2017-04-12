@@ -13,19 +13,21 @@ class GpioConnection(gpioController: GpioController,
                      pins: Set[Pin]) extends Actor {
   var eventRouter = Router(BroadcastRoutingLogic())
 
-  private val output = PinMode.DIGITAL_OUTPUT
-  private val input = PinMode.DIGITAL_INPUT
+  private val (input, output) = (PinMode.DIGITAL_INPUT, PinMode.DIGITAL_OUTPUT)
+  private val pullDown = PinPullResistance.PULL_DOWN
 
   case class ProvisionedPin(pin: Pin, state: Option[Boolean]) {
     val gpioPin: GpioPinDigitalOutput = state match {
       case Some(high) =>
-        val gpioPin = gpioController.provisionDigitalMultipurposePin(pin, output, PinPullResistance.PULL_DOWN)
+        val gpioPin = gpioController.provisionDigitalMultipurposePin(pin, output, pullDown)
         gpioPin.setState(high)
         gpioPin
 
       case None =>
-        gpioController.provisionDigitalMultipurposePin(pin, input, PinPullResistance.PULL_DOWN)
+        gpioController.provisionDigitalMultipurposePin(pin, input, pullDown)
     }
+
+    self ! StateChanged(pin, state.getOrElse(gpioPin.isHigh))
 
     gpioPin.addListener(new GpioPinListenerDigital {
       override def handleGpioPinDigitalStateChangeEvent(event: GpioPinDigitalStateChangeEvent): Unit =
@@ -38,19 +40,21 @@ class GpioConnection(gpioController: GpioController,
           case Some(high) =>
             if (state.isEmpty)
               gpioPin.setMode(output)
-
             gpioPin.setState(high)
-            self ! StateChanged(pin, high)
 
           case None =>
             gpioPin.setMode(input)
         }
+
+        self ! StateChanged(pin, newState.getOrElse(gpioPin.isHigh))
 
         copy(state = newState)
       } else this
   }
 
   var provisionedPins: Map[Pin, ProvisionedPin] = Map.empty
+
+  var lastPinState: Map[Pin, Boolean] = Map.empty
 
   override def receive: Receive = {
     case Register(ref) =>
@@ -60,8 +64,12 @@ class GpioConnection(gpioController: GpioController,
     case Terminated(ref) =>
       eventRouter = eventRouter.removeRoutee(ref)
 
-    case stateChanged: StateChanged =>
-      eventRouter.route(stateChanged, self)
+    case stateChanged@StateChanged(pin, state) =>
+      val lastState = lastPinState.getOrElse(pin, false)
+      if (state != lastState) {
+        eventRouter.route(stateChanged, self)
+        lastPinState += (pin -> state)
+      }
 
     case SetState(states) =>
       states
@@ -73,7 +81,7 @@ class GpioConnection(gpioController: GpioController,
               case None => ProvisionedPin(pin, state)
             }
 
-            provisionedPins + (pin -> provisionedPin)
+            provisionedPins += (pin -> provisionedPin)
         }
   }
 }

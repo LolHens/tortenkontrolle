@@ -16,11 +16,11 @@ object Gpio extends ExtensionId[GpioExt] with ExtensionIdProvider {
 
   trait Event
 
-  case object Connect extends Command
+  case class Connect(gpioHeader: GpioHeader) extends Command
 
   private[gpio] case class Register(ref: ActorRef) extends Command
 
-  case class CommandFailed(command: Command) extends Event
+  case class CommandFailed(command: Command, reason: Throwable) extends Event
 
   case class Connected(pins: Map[Int, Pin]) extends Event
 

@@ -1,42 +1,47 @@
 package org.lolhens.piectrl.gpio
 
 import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
-import com.pi4j.io.gpio.{GpioController, GpioFactory, Pin, RaspiPin}
-import com.pi4j.system.SystemInfo
+import com.pi4j.io.gpio.{GpioController, GpioFactory}
 import org.lolhens.piectrl.gpio.Gpio._
 
 import scala.util.control.NonFatal
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by pierr on 07.04.2017.
   */
 class GpioManager extends Actor {
+  var gpioConnections: Map[GpioHeader, ActorRef] = Map.empty
+
+  lazy val gpioControllerMaybe: Try[GpioController] = try {
+    Success(GpioFactory.getInstance())
+  } catch {
+    case NonFatal(exception) => Failure(exception)
+    case exception: UnsatisfiedLinkError => Failure(exception)
+  }
+
   override def receive: Receive = {
-    case connect@Connect =>
+    case connect@Connect(gpioHeader) =>
       val listener = sender()
 
-      try {
-        val gpioController: GpioController = GpioFactory.getInstance()
-        val pins: Set[Pin] = RaspiPin.allPins(SystemInfo.getBoardType).toSet
+      {
+        for {
+          gpioController <- gpioControllerMaybe
+          pins <- gpioHeader.pins
+          connection = gpioConnections.getOrElse(gpioHeader, {
+            val connection: ActorRef = GpioConnection.actor(gpioController, pins)
+            gpioConnections += (gpioHeader -> connection)
+            connection
+          })
+        } yield (connection, pins)
+      } match {
+        case Success((connection, pins)) =>
+          connection ! Register(listener)
+          listener tell(Connected(pins), connection)
 
-        val connection: ActorRef = GpioConnection.actor(gpioController, pins)
+        case Failure(exception) =>
+          listener ! CommandFailed(connect, exception)
 
-        connection ! Register(listener)
-        listener tell(Connected(pins), connection)
-
-        context.become {
-          case Connect =>
-            val listener = sender()
-
-            connection ! Register(listener)
-            listener tell(Connected(pins), connection)
-        }
-      } catch {
-        case NonFatal(_) =>
-          listener ! CommandFailed(connect)
-
-        case exception: UnsatisfiedLinkError =>
-          listener ! CommandFailed(connect)
       }
   }
 }
