@@ -6,7 +6,7 @@ import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
 import akka.io.{IO, Tcp}
 import akka.pattern.ask
 import akka.util.{ByteString, Timeout}
-import org.lolhens.akka.gpio.Gpio.GetState
+import org.lolhens.akka.gpio.Gpio.{GetState, SetState}
 import org.lolhens.akka.gpio.{Gpio, GpioHeader}
 import scodec.bits.ByteVector
 
@@ -19,13 +19,15 @@ import scala.language.postfixOps
   * Created by pierr on 11.03.2017.
   */
 private class ServerActor extends Actor {
+  println("started")
 
-  IO(Gpio)(context.system) ! Gpio.ConnectDigital(GpioHeader.Raspberry)
+  IO(Gpio)(context.system) ! Gpio.ConnectDigital(GpioHeader.Raspberry, inverted = true)
 
   override def receive: Receive = {
-    case Gpio.Connected(pins) =>
+    case Gpio.Connected(pins) => println("gpio connected")
       val gpioConnection = sender()
-      gpioConnection ! Gpio.Register(self)
+
+      gpioConnection ! SetState((0 until 8).map(_ -> Some(false)).toMap)
 
       IO(Tcp)(context.system) ! Tcp.Bind(self, new InetSocketAddress("0.0.0.0", 11641))
 
@@ -36,15 +38,11 @@ private class ServerActor extends Actor {
 
         case Tcp.Connected(_, _) =>
           val tcpConnection = sender()
+          println("tcp connected")
 
           val client = ClientActor.actor(tcpConnection, gpioConnection)
           tcpConnection ! Tcp.Register(client, useResumeWriting = false)
           gpioConnection ! Gpio.Register(client)
-
-          implicit val timeout = Timeout(1 second)
-          val state = Await.result((gpioConnection ? GetState(0 until 8: _*)).mapTo[Map[Int, Boolean]], 1 second)
-          val byte = ServerActor.statesToByte(state.filter(_._2).keys.toSeq)
-          tcpConnection ! Tcp.Write(ByteString(ByteVector(byte).toByteBuffer))
       }
 
     case Gpio.CommandFailed(_: Gpio.ConnectDigital, reason) =>
@@ -58,36 +56,51 @@ object ServerActor {
 
   def actor(implicit actorRefFactory: ActorRefFactory): ActorRef =
     actorRefFactory.actorOf(props)
-
-  def statesToByte(highPins: Seq[Int]): Int = highPins.foldLeft(0)((last, pin) => last | (1 << pin))
-
-  def statesFromByte(byte: Int): List[Int] = {
-    @tailrec
-    def getPins(byte: Int, position: Int, pins: List[Int]): List[Int] = {
-      val bit = byte & (1 << position)
-      val nextBits = bit ^ (1 << position)
-      if (nextBits != 0)
-        getPins(nextBits, position + 1, if (bit != 0) List(position) else Nil)
-      else
-        pins
-    }
-
-    getPins(byte, 0, Nil)
-  }
 }
 
 private class ClientActor(tcpConnection: ActorRef, gpioConnection: ActorRef) extends Actor {
+  println("client connected")
+
+  def toBinaryState(states: Map[Int, Boolean]): Int =
+    states.foldLeft(0)((last, state) => last | ((if (state._2) 1 else 0) << state._1))
+
+  def fromBinaryState(binState: Int, range: Range = null): Map[Int, Boolean] = {
+    @tailrec
+    def rec(binState: Int, position: Int, states: Map[Int, Boolean]): Map[Int, Boolean] = {
+      val bit = binState & (1 << position)
+      val remaining = binState ^ bit
+
+      val newStates = states + (position -> (bit != 0))
+
+      if (remaining != 0) rec(remaining, position + 1, newStates)
+      else newStates
+    }
+
+    val state = rec(binState, 0, Map.empty)
+    if (range != null) range.map(_ -> false).toMap ++ state
+    else state
+  }
+
+  def receiveState(data: ByteString): Unit = {
+    val binState = ByteVector(data.toByteBuffer).take(1).toInt(signed = false)
+    println("received " + binState)
+    gpioConnection ! Gpio.SetState(fromBinaryState(binState, 0 until 8).map(e => e._1 -> Some(e._2)))
+  }
+
+  def sendState(): Unit = {
+    implicit val timeout = Timeout(1 second)
+    val state = Await.result((gpioConnection ? GetState(0 until 8: _*)).mapTo[Map[Int, Boolean]], 1 second)
+    tcpConnection ! Tcp.Write(ByteString(ByteVector(toBinaryState(state)).toByteBuffer))
+  }
+
+  sendState()
+
   override def receive: Receive = {
     case Tcp.Received(data) =>
-      val byte = ByteVector(data.toByteBuffer)(0)
-      val states = (0 until 8).map(_ -> false).toMap ++ ServerActor.statesFromByte(byte).map(_ -> true)
-      gpioConnection ! Gpio.SetState(states.map(e => e._1 -> Some(e._2)))
+      receiveState(data)
 
     case Gpio.StateChanged(pin, state) =>
-      implicit val timeout = Timeout(1 second)
-      val state = Await.result((gpioConnection ? GetState(0 until 8: _*)).mapTo[Map[Int, Boolean]], 1 second)
-      val byte = ServerActor.statesToByte(state.filter(_._2).keys.toSeq)
-      tcpConnection ! Tcp.Write(ByteString(ByteVector(byte).toByteBuffer))
+      sendState()
 
     case failed@Tcp.CommandFailed(_: Tcp.Write) =>
       println(s"write failed: $failed")
