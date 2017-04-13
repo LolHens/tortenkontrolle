@@ -2,108 +2,107 @@ package org.lolhens.piectrl
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import akka.io.Tcp._
+import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
 import akka.io.{IO, Tcp}
-import akka.util.ByteString
-import org.lolhens.piectrl.ServerActor.{AddClient, RemoveClient}
+import akka.pattern.ask
+import akka.util.{ByteString, Timeout}
+import org.lolhens.akka.gpio.Gpio.GetState
+import org.lolhens.akka.gpio.{Gpio, GpioHeader}
 import scodec.bits.ByteVector
+
+import scala.annotation.tailrec
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
   * Created by pierr on 11.03.2017.
   */
-private class ServerActor(gpioControl: GpioControl) extends Actor {
-  private var clients = List[ActorRef]()
+private class ServerActor extends Actor {
 
-  import context.system
-
-  IO(Tcp) ! Tcp.Bind(self, new InetSocketAddress("0.0.0.0", 11641))
+  IO(Gpio)(context.system) ! Gpio.ConnectDigital(GpioHeader.Raspberry)
 
   override def receive: Receive = {
-    case failed@CommandFailed(_: Bind) =>
-      println(s"bind failed: $failed")
-      context.stop(self)
+    case Gpio.Connected(pins) =>
+      val gpioConnection = sender()
+      gpioConnection ! Gpio.Register(self)
 
-    case Connected(_, _) =>
-      val connection = sender()
-      connection ! Register(
-        context.actorOf(ClientActor.props(connection, self)),
-        useResumeWriting = false
-      )
+      IO(Tcp)(context.system) ! Tcp.Bind(self, new InetSocketAddress("0.0.0.0", 11641))
 
-    case AddClient(clientActor) =>
-      clients = clientActor +: clients
+      context become {
+        case failed@Tcp.CommandFailed(_: Tcp.Bind) =>
+          println(s"bind failed: $failed")
+          context stop self
 
-      val state = gpioControl.state.toByte
-      clientActor ! SendData(ByteVector(state))
+        case Tcp.Connected(_, _) =>
+          val tcpConnection = sender()
 
-    case RemoveClient(clientActor) =>
-      clients = clients.filterNot(_ == clientActor)
+          val client = ClientActor.actor(tcpConnection, gpioConnection)
+          tcpConnection ! Tcp.Register(client, useResumeWriting = false)
+          gpioConnection ! Gpio.Register(client)
 
-    case SendData(data) =>
-      clients.foreach(_ ! SendData(data))
+          implicit val timeout = Timeout(1 second)
+          val state = Await.result((gpioConnection ? GetState(0 until 8: _*)).mapTo[Map[Int, Boolean]], 1 second)
+          val byte = ServerActor.statesToByte(state.filter(_._2).keys.toSeq)
+          tcpConnection ! Tcp.Write(ByteString(ByteVector(byte).toByteBuffer))
+      }
 
-    case ReceiveData(data) =>
-      val state = data(0)
-      gpioControl.state = state
-      self ! SendData(ByteVector(state))
+    case Gpio.CommandFailed(_: Gpio.ConnectDigital, reason) =>
+      println(s"gpio connect failed: $reason")
+      context stop self
   }
 }
 
 object ServerActor {
-  def props(gpioControl: GpioControl): Props = Props(classOf[ServerActor], gpioControl)
+  val props: Props = Props[ServerActor]
 
-  def actor(gpioControl: GpioControl)(implicit actorSystem: ActorSystem): ActorRef =
-    actorSystem.actorOf(props(gpioControl))
+  def actor(implicit actorRefFactory: ActorRefFactory): ActorRef =
+    actorRefFactory.actorOf(props)
 
-  case class AddClient(clientActor: ActorRef)
+  def statesToByte(highPins: Seq[Int]): Int = highPins.foldLeft(0)((last, pin) => last | (1 << pin))
 
-  case class RemoveClient(clientActor: ActorRef)
+  def statesFromByte(byte: Int): List[Int] = {
+    @tailrec
+    def getPins(byte: Int, position: Int, pins: List[Int]): List[Int] = {
+      val bit = byte & (1 << position)
+      val nextBits = bit ^ (1 << position)
+      if (nextBits != 0)
+        getPins(nextBits, position + 1, if (bit != 0) List(position) else Nil)
+      else
+        pins
+    }
 
+    getPins(byte, 0, Nil)
+  }
 }
 
-private class ClientActor(connection: ActorRef, serverActor: ActorRef) extends Actor {
+private class ClientActor(tcpConnection: ActorRef, gpioConnection: ActorRef) extends Actor {
   override def receive: Receive = {
-    case data: SendData =>
-      connection ! Write(data.byteString)
+    case Tcp.Received(data) =>
+      val byte = ByteVector(data.toByteBuffer)(0)
+      val states = (0 until 8).map(_ -> false).toMap ++ ServerActor.statesFromByte(byte).map(_ -> true)
+      gpioConnection ! Gpio.SetState(states.map(e => e._1 -> Some(e._2)))
 
-    case Received(data) =>
-      serverActor ! ReceiveData(data)
+    case Gpio.StateChanged(pin, state) =>
+      implicit val timeout = Timeout(1 second)
+      val state = Await.result((gpioConnection ? GetState(0 until 8: _*)).mapTo[Map[Int, Boolean]], 1 second)
+      val byte = ServerActor.statesToByte(state.filter(_._2).keys.toSeq)
+      tcpConnection ! Tcp.Write(ByteString(ByteVector(byte).toByteBuffer))
 
-    case failed@CommandFailed(_: Write) =>
+    case failed@Tcp.CommandFailed(_: Tcp.Write) =>
       println(s"write failed: $failed")
 
-    case closed: ConnectionClosed =>
+    case closed: Tcp.ConnectionClosed =>
       println(s"connection closed $closed")
       context.stop(self)
   }
-
-  override def preStart(): Unit = serverActor ! ServerActor.AddClient(self)
-
-  override def postStop(): Unit = serverActor ! ServerActor.RemoveClient(self)
 }
 
 object ClientActor {
-  def props(connection: ActorRef, serverActor: ActorRef): Props =
-    Props(classOf[ClientActor], connection, serverActor)
+  def props(tcpConnection: ActorRef, gpioConnection: ActorRef): Props =
+    Props(classOf[ClientActor], tcpConnection, gpioConnection)
 
-  def actor(connection: ActorRef, serverActor: ActorRef)(implicit actorSystem: ActorSystem): ActorRef =
-    actorSystem.actorOf(props(connection, serverActor))
+  def actor(tcpConnection: ActorRef, gpioConnection: ActorRef)
+           (implicit actorRefFactory: ActorRefFactory): ActorRef =
+    actorRefFactory.actorOf(props(tcpConnection, gpioConnection))
 }
-
-case class ReceiveData(data: ByteVector) {
-  lazy val byteString = ByteString(data.toByteBuffer)
-}
-
-object ReceiveData {
-  def apply(byteString: ByteString): ReceiveData = ReceiveData(ByteVector(byteString.toByteBuffer))
-}
-
-case class SendData(data: ByteVector) {
-  lazy val byteString = ByteString(data.toByteBuffer)
-}
-
-object SendData {
-  def apply(byteString: ByteString): SendData = SendData(ByteVector(byteString.toByteBuffer))
-}
-
