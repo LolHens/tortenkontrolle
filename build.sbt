@@ -1,7 +1,7 @@
 name := "Tortenkontrolle"
 
 lazy val settings = Seq(
-  version := "0.1.3",
+  version := "0.1.4",
 
   scalaOrganization in ThisBuild := "org.typelevel",
   scalaVersion := "2.12.1",
@@ -11,7 +11,7 @@ lazy val settings = Seq(
   libraryDependencies ++= Seq(
     "com.typesafe.akka" %% "akka-actor" % "2.5.0",
     "org.scodec" %% "scodec-bits" % "1.1.4",
-    "org.lolhens" %% "akka-gpio" % "1.3.4"
+    "org.lolhens" %% "akka-gpio" % "1.3.5"
   ),
 
   addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
